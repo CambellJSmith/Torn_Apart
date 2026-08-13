@@ -25,6 +25,7 @@ const BUTTON_X: StringName = &"Button_X" # References the interaction-pose input
 var _gravity: float = float(ProjectSettings.get_setting("physics/3d/default_gravity")) # Reads the project's configured 3D gravity once for physics calculations.
 var _spawn_transform: Transform3D = Transform3D.IDENTITY # Stores the authored player spawn transform for defeat recovery.
 var _respawned_this_frame: bool = false # Stores whether contact damage moved the player back to the spawn point during this physics frame.
+var _stomp_bounce_active: bool = false # Preserves a stomp rebound across the stale floor state from the collision that produced it.
 
 func _ready() -> void: # Captures runtime state that depends on the player's authored scene placement.
 	_spawn_transform = global_transform # Remembers the initial world transform for lightweight prototype defeat recovery.
@@ -56,6 +57,10 @@ func _physics_process(delta: float) -> void: # Advances movement at the fixed ph
 	_paper_visual.set_interacting(Input.is_action_pressed(BUTTON_X)) # Lets the supplied interaction pose override grounded locomotion while the interaction button is held.
 
 func _apply_vertical_movement(delta: float) -> void: # Keeps jump and gravity logic isolated from horizontal movement.
+	if _stomp_bounce_active: # Overrides the stale floor state on the first movement frame after a successful stomp.
+		_stomp_bounce_active = false # Releases the override because the next move will refresh CharacterBody3D floor state.
+		velocity.y -= _gravity * delta # Applies normal gravity while preserving the upward stomp rebound for this movement frame.
+		return # Prevents grounded handling from clearing the rebound before move_and_slide can use it.
 	if is_on_floor(): # Checks whether the previous physics move established floor contact.
 		if Input.is_action_just_pressed(BUTTON_A): # Detects a fresh jump press while grounded.
 			velocity.y = JUMP_VELOCITY # Launches the player upward.
@@ -81,6 +86,7 @@ func _handle_enemy_collisions(vertical_velocity_before_move: float) -> bool: # R
 			if vertical_velocity_before_move < 0.0 and upward_contact > STOMP_NORMAL_DOT: # Requires both descent and an upward-facing collision normal for a stomp.
 				if slime.stomp(): # Attempts to kill the enemy exactly once before applying the rebound.
 					velocity.y = STOMP_BOUNCE_VELOCITY # Rebounds the player upward after a successful squash.
+					_stomp_bounce_active = true # Preserves the rebound through the next frame's stale CharacterBody3D floor state.
 					return true # Reports the rebound so presentation does not treat the enemy surface as ordinary floor contact.
 			take_enemy_contact_damage(slime.global_position) # Routes side or underside contact through the composed health component.
 			return false # Stops after resolving the relevant live enemy collision for this frame.
@@ -108,6 +114,7 @@ func get_current_health() -> int: # Exposes player health for future UI without 
 func _respawn_after_defeat() -> void: # Restores the prototype player state after health is depleted.
 	global_transform = _spawn_transform # Moves the player back to the authored starting transform.
 	velocity = Vector3.ZERO # Clears movement inherited from the collision that caused defeat.
+	_stomp_bounce_active = false # Clears any pending rebound when defeat recovery takes ownership of movement state.
 	_health.restore_full() # Restores health so the prototype can continue immediately after defeat.
 	_respawned_this_frame = true # Prevents stale collision presentation from the pre-respawn location.
 
