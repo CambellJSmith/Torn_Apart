@@ -28,6 +28,10 @@ window/stretch/mode="canvas_items"
 3d_physics/layer_2="player"
 3d_physics/layer_3="enemy"
 
+[physics]
+
+common/physics_interpolation=true
+
 [rendering]
 
 renderer/rendering_method="gl_compatibility"
