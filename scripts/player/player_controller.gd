@@ -28,7 +28,8 @@ func _physics_process(delta: float) -> void: # Advances movement at the fixed ph
 	_apply_vertical_movement(delta) # Applies gravity and jump behaviour independently from horizontal movement.
 	move_and_slide() # Moves through the 3D world using CharacterBody3D collision and floor handling.
 	_paper_visual.set_motion_direction(Vector3(velocity.x, 0.0, velocity.z)) # Passes current ground-plane motion to the visual component.
-	_paper_visual.set_interacting(Input.is_action_pressed(BUTTON_X)) # Lets the supplied interaction pose override locomotion while the interaction button is held.
+	_paper_visual.set_airborne(not is_on_floor()) # Passes post-move floor contact so jump presentation matches the actual physics state.
+	_paper_visual.set_interacting(Input.is_action_pressed(BUTTON_X)) # Lets the supplied interaction pose override grounded locomotion while the interaction button is held.
 
 func _apply_vertical_movement(delta: float) -> void: # Keeps jump and gravity logic isolated from horizontal movement.
 	if is_on_floor(): # Checks whether the previous physics move established floor contact.
