@@ -14,6 +14,7 @@ const BUTTON_A: StringName = &"Button_A" # References the jump input action.
 const BUTTON_X: StringName = &"Button_X" # References the interaction-pose input action.
 
 @onready var _paper_visual: TornPaperVisual = $paper_visual # Caches the composed paper visual controller.
+@onready var _landing_probe: RayCast3D = $landing_probe # Caches the downward probe used only to time the pre-landing animation window.
 
 var _gravity: float = float(ProjectSettings.get_setting("physics/3d/default_gravity")) # Reads the project's configured 3D gravity once for physics calculations.
 
@@ -27,8 +28,10 @@ func _physics_process(delta: float) -> void: # Advances movement at the fixed ph
 	velocity.z = move_toward(velocity.z, requested_velocity.z, acceleration * delta) # Accelerates depth movement toward the requested Z speed.
 	_apply_vertical_movement(delta) # Applies gravity and jump behaviour independently from horizontal movement.
 	move_and_slide() # Moves through the 3D world using CharacterBody3D collision and floor handling.
+	var is_airborne: bool = not is_on_floor() # Reads the post-move floor state so presentation matches the current physics result.
+	var landing_imminent: bool = _is_landing_imminent(is_airborne) # Checks whether a descending airborne player is close enough to begin landing frames.
 	_paper_visual.set_motion_direction(Vector3(velocity.x, 0.0, velocity.z)) # Passes current ground-plane motion to the visual component.
-	_paper_visual.set_airborne(not is_on_floor()) # Passes post-move floor contact so jump presentation matches the actual physics state.
+	_paper_visual.set_jump_state(is_airborne, landing_imminent) # Passes airtime and near-floor state so the jump sheet can split takeoff from landing.
 	_paper_visual.set_interacting(Input.is_action_pressed(BUTTON_X)) # Lets the supplied interaction pose override grounded locomotion while the interaction button is held.
 
 func _apply_vertical_movement(delta: float) -> void: # Keeps jump and gravity logic isolated from horizontal movement.
@@ -42,3 +45,11 @@ func _apply_vertical_movement(delta: float) -> void: # Keeps jump and gravity lo
 	if velocity.y < 0.0: # Detects the falling half of the jump arc.
 		gravity_multiplier = FALL_GRAVITY_MULTIPLIER # Increases falling gravity for a tighter landing feel.
 	velocity.y -= _gravity * gravity_multiplier * delta # Applies frame-rate-independent gravity to vertical velocity.
+
+func _is_landing_imminent(is_airborne: bool) -> bool: # Resolves whether the descending player is within the short visual landing window.
+	if not is_airborne: # Rejects grounded frames because actual contact is handled separately by the visual state machine.
+		return false # Prevents the proximity probe from repeatedly restarting landing while standing on the floor.
+	if velocity.y >= 0.0: # Rejects rising and apex-adjacent frames so takeoff always reaches and holds its fourth frame first.
+		return false # Keeps the landing half completely out of the ascent portion of the jump.
+	_landing_probe.force_raycast_update() # Refreshes the probe after this physics frame's movement so the result matches the player's latest position.
+	return _landing_probe.is_colliding() # Starts the second half of the jump sheet only when floor geometry is close below the falling player.
