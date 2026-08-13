@@ -5,7 +5,7 @@ const IDLE_TEXTURE: Texture2D = preload("res://assets/player/player_idle_front.p
 const INTERACT_TEXTURE: Texture2D = preload("res://assets/player/player_interact_front.png") # Loads the normalized front-facing interaction artwork once.
 const WALK_TEXTURE: Texture2D = preload("res://assets/player/player_walk_right.png") # Loads the optimized side-facing walk sprite sheet once.
 const FRONT_PIXEL_SIZE: float = 0.016 # Keeps front-facing artwork at the intended world-space scale.
-const WALK_PIXEL_SIZE: float = 0.0274 # Compensates for the smaller walk-sheet cells to preserve apparent character size.
+const WALK_PIXEL_SIZE: float = 0.026 # Keeps the walk artwork slightly smaller than the front-facing poses.
 const WALK_HORIZONTAL_FRAMES: int = 4 # Describes the horizontal frame layout of the walk sheet.
 const WALK_VERTICAL_FRAMES: int = 2 # Describes the vertical frame layout of the walk sheet.
 const WALK_FRAME_COUNT: int = WALK_HORIZONTAL_FRAMES * WALK_VERTICAL_FRAMES # Derives the number of walk frames from the sheet layout.
@@ -58,7 +58,7 @@ func _apply_walk_state(delta: float) -> void: # Configures and advances the walk
 		_sprite.hframes = WALK_HORIZONTAL_FRAMES # Applies the horizontal frame layout.
 		_sprite.vframes = WALK_VERTICAL_FRAMES # Applies the vertical frame layout.
 		_sprite.frame = 0 # Starts each new walking sequence from the beginning of the sheet.
-		_sprite.pixel_size = WALK_PIXEL_SIZE # Compensates for the smaller walk frames without changing character world size.
+		_sprite.pixel_size = WALK_PIXEL_SIZE # Applies the dedicated walk-art scale.
 		_walk_frame_accumulator = 0.0 # Clears stale frame timing when entering the walk state.
 	_sprite.flip_h = _last_horizontal_facing < 0.0 # Mirrors the source sheet when horizontal movement is in the opposite direction.
 	_walk_frame_accumulator += delta * WALK_FRAMES_PER_SECOND # Converts elapsed time into fractional animation frames.
