@@ -3,13 +3,15 @@ class_name TornPaperVisual # Gives the visual component a strongly typed project
 
 const IDLE_TEXTURE: Texture2D = preload("res://assets/player/player_idle_front.png") # Loads the normalized front-facing idle artwork once.
 const INTERACT_TEXTURE: Texture2D = preload("res://assets/player/player_interact_front.png") # Loads the normalized front-facing interaction artwork once.
-const WALK_TEXTURE: Texture2D = preload("res://assets/player/player_walk_right.png") # Loads the optimized side-facing walk sprite sheet once.
+const WALK_SIDE_TEXTURE: Texture2D = preload("res://assets/player/player_walk_right.png") # Loads the optimized side-facing walk sprite sheet once.
+const WALK_FRONT_TEXTURE_PATH: String = "res://assets/player/player_walk_front.png" # Defines where the toward-camera walk sheet will live when supplied.
+const WALK_BACK_TEXTURE_PATH: String = "res://assets/player/player_walk_back.png" # Defines where the away-from-camera walk sheet will live when supplied.
 const FRONT_PIXEL_SIZE: float = 0.016 # Keeps front-facing artwork at the intended world-space scale.
-const SIDE_PIXEL_SIZE: float = 0.026 # Keeps side-facing locomotion artwork slightly smaller than the front-facing poses.
-const WALK_HORIZONTAL_FRAMES: int = 4 # Describes the horizontal frame layout of the walk sheet.
-const WALK_VERTICAL_FRAMES: int = 2 # Describes the vertical frame layout of the walk sheet.
-const WALK_FRAME_COUNT: int = WALK_HORIZONTAL_FRAMES * WALK_VERTICAL_FRAMES # Derives the number of walk frames from the sheet layout.
-const WALK_FRAMES_PER_SECOND: float = 10.0 # Controls the playback cadence of the walk cycle.
+const SIDE_PIXEL_SIZE: float = 0.026 # Keeps locomotion artwork at the established world-space scale.
+const WALK_HORIZONTAL_FRAMES: int = 4 # Describes the horizontal frame layout shared by the walk sheets.
+const WALK_VERTICAL_FRAMES: int = 2 # Describes the vertical frame layout shared by the walk sheets.
+const WALK_FRAME_COUNT: int = WALK_HORIZONTAL_FRAMES * WALK_VERTICAL_FRAMES # Derives the number of walk frames from the shared sheet layout.
+const WALK_FRAMES_PER_SECOND: float = 10.0 # Controls the playback cadence of the walk cycles.
 const JUMP_HORIZONTAL_FRAMES: int = 4 # Describes the horizontal frame layout of the supplied jump sheet.
 const JUMP_VERTICAL_FRAMES: int = 2 # Describes the vertical frame layout of the supplied jump sheet.
 const JUMP_FRAME_COUNT: int = JUMP_HORIZONTAL_FRAMES * JUMP_VERTICAL_FRAMES # Derives the number of jump frames from the sheet layout.
@@ -24,6 +26,8 @@ const MOTION_EPSILON: float = 0.01 # Filters tiny movement values from visual an
 
 @onready var _sprite: Sprite3D = $sprite # Caches the single billboard sprite used for every player visual state.
 
+var _walk_front_texture: Texture2D = null # Stores the optional toward-camera walk sheet after it is found in the project.
+var _walk_back_texture: Texture2D = null # Stores the optional away-from-camera walk sheet after it is found in the project.
 var _jump_texture: Texture2D = null # Stores the decoded transparent jump sprite sheet used during airtime and landing.
 var _motion_direction: Vector3 = Vector3.ZERO # Stores player movement used to select and orient visual animation.
 var _walk_frame_accumulator: float = 0.0 # Accumulates fractional walk frames without allocating animation objects.
@@ -35,6 +39,8 @@ var _is_airborne: bool = false # Stores whether physics currently reports the ch
 var _landing_sequence_active: bool = false # Stores whether the second half of the jump sheet currently owns visual priority.
 
 func _ready() -> void: # Initializes runtime textures and the neutral front-facing artwork.
+	_walk_front_texture = _load_optional_texture(WALK_FRONT_TEXTURE_PATH) # Loads the toward-camera walk sheet when the asset has been supplied.
+	_walk_back_texture = _load_optional_texture(WALK_BACK_TEXTURE_PATH) # Loads the away-from-camera walk sheet when the asset has been supplied.
 	_jump_texture = TornJumpTextureData.get_texture() # Decodes and caches the supplied transparent jump sprite sheet once.
 	_apply_single_frame_state(IDLE_TEXTURE) # Applies the idle texture before the first visual update.
 
@@ -63,6 +69,11 @@ func set_jump_state(is_airborne: bool, landing_imminent: bool) -> void: # Accept
 func set_interacting(is_interacting: bool) -> void: # Accepts the current interaction-button state from the player controller.
 	_is_interacting = is_interacting # Stores the interaction override for the next grounded presentation update.
 
+func _load_optional_texture(path: String) -> Texture2D: # Loads a directional walk sheet only when its asset exists in the project.
+	if not ResourceLoader.exists(path, "Texture2D"): # Checks the resource path before loading so missing user-supplied art never breaks the prototype.
+		return null # Leaves that direction on the existing side-walk fallback until the sprite is dropped into place.
+	return ResourceLoader.load(path, "Texture2D") as Texture2D # Loads and strongly casts the supplied texture resource once during visual setup.
+
 func _start_landing_sequence() -> void: # Begins the second half of the supplied jump animation exactly once per landing.
 	_landing_sequence_active = true # Gives landing presentation priority over airborne hold and grounded locomotion.
 	_landing_frame_accumulator = 0.0 # Starts the landing half from its first supplied frame.
@@ -81,7 +92,7 @@ func _update_visual_state(delta: float) -> void: # Resolves landing, airborne, i
 	if _motion_direction.length_squared() <= MOTION_EPSILON * MOTION_EPSILON: # Checks whether ground-plane motion is effectively stopped.
 		_apply_single_frame_state(IDLE_TEXTURE) # Returns the billboard to the supplied front-facing idle pose.
 		return # Prevents walk animation work while stationary.
-	_apply_walk_state(delta) # Advances the supplied walk sheet whenever the grounded player is moving.
+	_apply_walk_state(delta) # Advances the appropriate directional walk sheet whenever the grounded player is moving.
 
 func _apply_single_frame_state(texture: Texture2D) -> void: # Configures the billboard for a standalone idle or interaction image.
 	if _sprite.texture != texture or _sprite.hframes != 1 or _sprite.vframes != 1: # Avoids redundant resource and sheet-layout writes every frame.
@@ -93,21 +104,30 @@ func _apply_single_frame_state(texture: Texture2D) -> void: # Configures the bil
 	_sprite.flip_h = false # Keeps both front-facing poses unmirrored.
 	_walk_frame_accumulator = 0.0 # Resets walk timing so a future walk begins cleanly.
 
-func _apply_walk_state(delta: float) -> void: # Configures and advances the walking sprite sheet.
-	if _sprite.texture != WALK_TEXTURE: # Detects the transition from another visual state into walking.
-		_sprite.texture = WALK_TEXTURE # Switches the billboard to the supplied walk sprite sheet.
-		_sprite.hframes = WALK_HORIZONTAL_FRAMES # Applies the horizontal frame layout.
-		_sprite.vframes = WALK_VERTICAL_FRAMES # Applies the vertical frame layout.
-		_sprite.frame = 0 # Starts each new walking sequence from the beginning of the sheet.
-		_sprite.pixel_size = SIDE_PIXEL_SIZE # Applies the established smaller side-facing artwork scale.
-		_walk_frame_accumulator = 0.0 # Clears stale frame timing when entering the walk state.
-	_sprite.flip_h = _last_horizontal_facing < 0.0 # Mirrors the source sheet when horizontal movement is in the opposite direction.
+func _apply_walk_state(delta: float) -> void: # Configures and advances the directional walking sprite sheet.
+	var walk_texture: Texture2D = _get_walk_texture() # Resolves the best supplied walk sheet from the dominant movement axis.
+	if _sprite.texture != walk_texture: # Detects transitions between idle, side walking, front walking, and back walking.
+		_sprite.texture = walk_texture # Switches the billboard to the resolved directional walk sheet.
+		_sprite.hframes = WALK_HORIZONTAL_FRAMES # Applies the horizontal frame layout shared by every walk sheet.
+		_sprite.vframes = WALK_VERTICAL_FRAMES # Applies the vertical frame layout shared by every walk sheet.
+		_sprite.frame = 0 # Starts each newly selected directional walk sequence from the beginning of its sheet.
+		_sprite.pixel_size = SIDE_PIXEL_SIZE # Applies the established locomotion artwork scale to every directional walk sheet.
+		_walk_frame_accumulator = 0.0 # Clears stale frame timing when the displayed walk direction changes.
+	_sprite.flip_h = walk_texture == WALK_SIDE_TEXTURE and _last_horizontal_facing < 0.0 # Mirrors only the side-facing source sheet when horizontal movement is leftward.
 	_walk_frame_accumulator += delta * WALK_FRAMES_PER_SECOND # Converts elapsed time into fractional animation frames.
 	var frame_advance: int = int(_walk_frame_accumulator) # Extracts only the complete frames ready to advance this update.
 	if frame_advance <= 0: # Checks whether enough time has elapsed for another walk frame.
 		return # Keeps the current frame until the configured animation cadence is reached.
 	_walk_frame_accumulator -= float(frame_advance) # Retains the fractional remainder for stable frame-rate-independent playback.
-	_sprite.frame = (_sprite.frame + frame_advance) % WALK_FRAME_COUNT # Advances through the supplied walk frames and loops cleanly.
+	_sprite.frame = (_sprite.frame + frame_advance) % WALK_FRAME_COUNT # Advances through the selected walk sheet and loops cleanly.
+
+func _get_walk_texture() -> Texture2D: # Chooses side, toward-camera, or away-from-camera artwork from the dominant ground-plane direction.
+	if absf(_motion_direction.z) > absf(_motion_direction.x): # Gives front or back artwork priority whenever depth movement is stronger than horizontal movement.
+		if _motion_direction.z > MOTION_EPSILON and _walk_front_texture != null: # Detects meaningful movement toward the camera when its supplied sheet is available.
+			return _walk_front_texture # Uses the dedicated toward-camera walk cycle.
+		if _motion_direction.z < -MOTION_EPSILON and _walk_back_texture != null: # Detects meaningful movement away from the camera when its supplied sheet is available.
+			return _walk_back_texture # Uses the dedicated away-from-camera walk cycle.
+	return WALK_SIDE_TEXTURE # Uses the existing right-facing cycle for horizontal movement or as the safe missing-art fallback.
 
 func _configure_jump_sprite() -> void: # Applies the shared sheet layout, scale, and facing used by both jump phases.
 	if _sprite.texture != _jump_texture: # Detects the transition from grounded artwork into the supplied jump sheet.
