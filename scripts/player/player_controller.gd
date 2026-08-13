@@ -113,6 +113,7 @@ func get_current_health() -> int: # Exposes player health for future UI without 
 
 func _respawn_after_defeat() -> void: # Restores the prototype player state after health is depleted.
 	global_transform = _spawn_transform # Moves the player back to the authored starting transform.
+	reset_physics_interpolation() # Prevents the renderer from blending the defeat teleport across the world after physics interpolation is enabled.
 	velocity = Vector3.ZERO # Clears movement inherited from the collision that caused defeat.
 	_stomp_bounce_active = false # Clears any pending rebound when defeat recovery takes ownership of movement state.
 	_health.restore_full() # Restores health so the prototype can continue immediately after defeat.
