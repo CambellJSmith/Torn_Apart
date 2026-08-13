@@ -1,4 +1,4 @@
-[gd_scene load_steps=12 format=3]
+[gd_scene load_steps=4 format=3]
 
 [ext_resource type="Script" path="res://scripts/player/player_controller.gd" id="1_player"]
 [ext_resource type="Script" path="res://scripts/player/paper_visual.gd" id="2_visual"]
@@ -6,42 +6,6 @@
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_player"]
 radius = 0.38
 height = 1.6
-
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_outline"]
-albedo_color = Color(0.08, 0.07, 0.09, 1)
-roughness = 1.0
-cull_mode = 2
-
-[sub_resource type="QuadMesh" id="QuadMesh_outline"]
-material = SubResource("StandardMaterial3D_outline")
-size = Vector2(1.28, 1.78)
-
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_body"]
-albedo_color = Color(0.89, 0.25, 0.22, 1)
-roughness = 1.0
-cull_mode = 2
-
-[sub_resource type="QuadMesh" id="QuadMesh_body"]
-material = SubResource("StandardMaterial3D_body")
-size = Vector2(1.16, 1.66)
-
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_face"]
-albedo_color = Color(1, 0.89, 0.69, 1)
-roughness = 1.0
-cull_mode = 2
-
-[sub_resource type="QuadMesh" id="QuadMesh_face"]
-material = SubResource("StandardMaterial3D_face")
-size = Vector2(0.82, 0.68)
-
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_detail"]
-albedo_color = Color(0.07, 0.06, 0.08, 1)
-roughness = 1.0
-cull_mode = 2
-
-[sub_resource type="QuadMesh" id="QuadMesh_eye"]
-material = SubResource("StandardMaterial3D_detail")
-size = Vector2(0.12, 0.19)
 
 [node name="player" type="CharacterBody3D" groups=["player"]]
 collision_layer = 2
@@ -57,23 +21,6 @@ shape = SubResource("CapsuleShape3D_player")
 position = Vector3(0, 0.88, 0)
 script = ExtResource("2_visual")
 
-[node name="art_root" type="Node3D" parent="paper_visual"]
-
-[node name="outline" type="MeshInstance3D" parent="paper_visual/art_root"]
-position = Vector3(0, 0, -0.015)
-mesh = SubResource("QuadMesh_outline")
-
-[node name="body" type="MeshInstance3D" parent="paper_visual/art_root"]
-mesh = SubResource("QuadMesh_body")
-
-[node name="face" type="MeshInstance3D" parent="paper_visual/art_root"]
-position = Vector3(0, 0.25, 0.012)
-mesh = SubResource("QuadMesh_face")
-
-[node name="left_eye" type="MeshInstance3D" parent="paper_visual/art_root"]
-position = Vector3(-0.2, 0.3, 0.024)
-mesh = SubResource("QuadMesh_eye")
-
-[node name="right_eye" type="MeshInstance3D" parent="paper_visual/art_root"]
-position = Vector3(0.2, 0.3, 0.024)
-mesh = SubResource("QuadMesh_eye")
+[node name="sprite" type="Sprite3D" parent="paper_visual"]
+billboard = 1
+pixel_size = 0.016

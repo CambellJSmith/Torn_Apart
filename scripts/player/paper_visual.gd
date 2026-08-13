@@ -1,34 +1,69 @@
-extends Node3D # Controls only the presentation of the flat paper character.
+extends Node3D # Controls only the presentation and animation state of the flat paper character.
 class_name TornPaperVisual # Gives the visual component a strongly typed project-wide class name.
 
-const LEAN_LIMIT: float = 0.08 # Limits how far the paper artwork leans during lateral movement.
-const LEAN_SHARPNESS: float = 12.0 # Controls how quickly the visual settles toward its target lean.
+const IDLE_TEXTURE: Texture2D = preload("res://assets/player/player_idle_front.png") # Loads the normalized front-facing idle artwork once.
+const INTERACT_TEXTURE: Texture2D = preload("res://assets/player/player_interact_front.png") # Loads the normalized front-facing interaction artwork once.
+const WALK_TEXTURE: Texture2D = preload("res://assets/player/player_walk_right.png") # Loads the optimized side-facing walk sprite sheet once.
+const FRONT_PIXEL_SIZE: float = 0.016 # Keeps front-facing artwork at the intended world-space scale.
+const WALK_PIXEL_SIZE: float = 0.0274 # Compensates for the smaller walk-sheet cells to preserve apparent character size.
+const WALK_HORIZONTAL_FRAMES: int = 4 # Describes the horizontal frame layout of the walk sheet.
+const WALK_VERTICAL_FRAMES: int = 2 # Describes the vertical frame layout of the walk sheet.
+const WALK_FRAME_COUNT: int = WALK_HORIZONTAL_FRAMES * WALK_VERTICAL_FRAMES # Derives the number of walk frames from the sheet layout.
+const WALK_FRAMES_PER_SECOND: float = 10.0 # Controls the playback cadence of the walk cycle.
 const MOTION_EPSILON: float = 0.01 # Filters tiny movement values from visual animation decisions.
 
-@onready var _art_root: Node3D = $art_root # Caches the child that contains all placeholder paper artwork.
+@onready var _sprite: Sprite3D = $sprite # Caches the single billboard sprite used for every player visual state.
 
-var _motion_direction: Vector3 = Vector3.ZERO # Stores player movement used to animate the paper presentation.
+var _motion_direction: Vector3 = Vector3.ZERO # Stores player movement used to select and orient visual animation.
+var _walk_frame_accumulator: float = 0.0 # Accumulates fractional walk frames without allocating animation objects.
+var _last_horizontal_facing: float = 1.0 # Remembers the last meaningful horizontal direction for left-right mirroring.
+var _is_interacting: bool = false # Stores whether the front-facing interaction pose should override locomotion.
 
-func _process(delta: float) -> void: # Updates camera-facing presentation independently from gameplay physics.
-	_face_active_camera() # Keeps the flat character readable from the current gameplay camera.
-	_apply_motion_lean(delta) # Adds a small movement lean without affecting collision or gameplay state.
+func _ready() -> void: # Initializes the billboard with the neutral front-facing artwork.
+	_apply_single_frame_state(IDLE_TEXTURE) # Applies the idle texture before the first visual update.
+
+func _process(delta: float) -> void: # Updates presentation independently from gameplay physics.
+	_update_visual_state(delta) # Selects the correct texture, frame, scale, and horizontal orientation.
 
 func set_motion_direction(direction: Vector3) -> void: # Accepts movement information from the composed player controller.
-	_motion_direction = direction # Stores the latest ground-plane movement for visual animation.
+	_motion_direction = direction # Stores the latest ground-plane movement for animation selection.
+	if absf(direction.x) > MOTION_EPSILON: # Detects meaningful horizontal movement that establishes facing.
+		_last_horizontal_facing = signf(direction.x) # Remembers whether the side-facing walk art should use its source orientation or be mirrored.
 
-func _face_active_camera() -> void: # Rotates the flat character around the vertical axis toward the active camera.
-	var camera: Camera3D = get_viewport().get_camera_3d() # Retrieves the camera currently rendering this viewport.
-	if camera == null: # Handles frames where no gameplay camera is active yet.
-		return # Avoids attempting a look-at operation without a camera target.
-	var camera_target: Vector3 = camera.global_position # Starts with the camera's world position as the facing target.
-	camera_target.y = global_position.y # Removes vertical tilt so the paper character stays upright on the ground.
-	if global_position.distance_squared_to(camera_target) <= MOTION_EPSILON: # Guards against an invalid look-at direction when positions coincide.
-		return # Skips rotation when there is no meaningful horizontal direction to the camera.
-	look_at(camera_target, Vector3.UP, true) # Points the artwork's front face toward the camera while preserving vertical orientation.
+func set_interacting(is_interacting: bool) -> void: # Accepts the current interaction-button state from the player controller.
+	_is_interacting = is_interacting # Stores the interaction override for the next presentation update.
 
-func _apply_motion_lean(delta: float) -> void: # Smoothly leans the artwork to reinforce lateral movement.
-	var target_lean: float = 0.0 # Starts from a neutral upright presentation.
-	if absf(_motion_direction.x) > MOTION_EPSILON: # Checks whether lateral movement is large enough to animate.
-		target_lean = -signf(_motion_direction.x) * LEAN_LIMIT # Chooses a small lean opposite the lateral travel direction.
-	var blend_weight: float = 1.0 - exp(-LEAN_SHARPNESS * delta) # Converts sharpness into stable frame-rate-independent smoothing.
-	_art_root.rotation.z = lerp_angle(_art_root.rotation.z, target_lean, blend_weight) # Smoothly rotates only the artwork while leaving the gameplay body untouched.
+func _update_visual_state(delta: float) -> void: # Resolves the visual state with interaction taking priority over locomotion.
+	if _is_interacting: # Checks whether the interaction pose currently has priority.
+		_apply_single_frame_state(INTERACT_TEXTURE) # Shows the supplied front-facing talking or explaining pose.
+		return # Prevents locomotion animation from overriding the interaction pose.
+	if _motion_direction.length_squared() <= MOTION_EPSILON * MOTION_EPSILON: # Checks whether ground-plane motion is effectively stopped.
+		_apply_single_frame_state(IDLE_TEXTURE) # Returns the billboard to the supplied front-facing idle pose.
+		return # Prevents walk animation work while stationary.
+	_apply_walk_state(delta) # Advances the supplied walk sheet whenever the player is moving.
+
+func _apply_single_frame_state(texture: Texture2D) -> void: # Configures the billboard for a standalone idle or interaction image.
+	if _sprite.texture != texture or _sprite.hframes != 1 or _sprite.vframes != 1: # Avoids redundant resource and sheet-layout writes every frame.
+		_sprite.texture = texture # Switches the billboard to the requested standalone texture.
+		_sprite.hframes = 1 # Treats the standalone texture as one horizontal frame.
+		_sprite.vframes = 1 # Treats the standalone texture as one vertical frame.
+		_sprite.frame = 0 # Selects the standalone texture frame.
+		_sprite.pixel_size = FRONT_PIXEL_SIZE # Uses the front-art scale for both standalone poses.
+	_sprite.flip_h = false # Keeps both front-facing poses unmirrored.
+	_walk_frame_accumulator = 0.0 # Resets walk timing so a future walk begins cleanly.
+
+func _apply_walk_state(delta: float) -> void: # Configures and advances the walking sprite sheet.
+	if _sprite.texture != WALK_TEXTURE: # Detects the transition from a standalone pose into walking.
+		_sprite.texture = WALK_TEXTURE # Switches the billboard to the supplied walk sprite sheet.
+		_sprite.hframes = WALK_HORIZONTAL_FRAMES # Applies the horizontal frame layout.
+		_sprite.vframes = WALK_VERTICAL_FRAMES # Applies the vertical frame layout.
+		_sprite.frame = 0 # Starts each new walking sequence from the beginning of the sheet.
+		_sprite.pixel_size = WALK_PIXEL_SIZE # Compensates for the smaller walk frames without changing character world size.
+		_walk_frame_accumulator = 0.0 # Clears stale frame timing when entering the walk state.
+	_sprite.flip_h = _last_horizontal_facing < 0.0 # Mirrors the source sheet when horizontal movement is in the opposite direction.
+	_walk_frame_accumulator += delta * WALK_FRAMES_PER_SECOND # Converts elapsed time into fractional animation frames.
+	var frame_advance: int = int(_walk_frame_accumulator) # Extracts only the complete frames ready to advance this update.
+	if frame_advance <= 0: # Checks whether enough time has elapsed for another walk frame.
+		return # Keeps the current frame until the configured animation cadence is reached.
+	_walk_frame_accumulator -= float(frame_advance) # Retains the fractional remainder for stable frame-rate-independent playback.
+	_sprite.frame = (_sprite.frame + frame_advance) % WALK_FRAME_COUNT # Advances through the supplied walk frames and loops cleanly.

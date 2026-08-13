@@ -5,6 +5,7 @@ const STICK_LEFT_SOUTH: StringName = &"StickLeft_South" # Identifies the south m
 const STICK_LEFT_WEST: StringName = &"StickLeft_West" # Identifies the west movement action.
 const STICK_LEFT_EAST: StringName = &"StickLeft_East" # Identifies the east movement action.
 const BUTTON_A: StringName = &"Button_A" # Identifies the primary action button.
+const BUTTON_X: StringName = &"Button_X" # Identifies the interaction button.
 const BUTTON_START: StringName = &"Button_Start" # Identifies the start or pause button.
 const STICK_DEADZONE: float = 0.20 # Controls analog movement deadzone handling.
 const BUTTON_DEADZONE: float = 0.50 # Controls digital button deadzone handling.
@@ -15,6 +16,7 @@ static func ensure_default_actions() -> void: # Creates fallback keyboard and ga
 	_ensure_axis_action(STICK_LEFT_WEST, KEY_A, JOY_AXIS_LEFT_X, -1.0) # Registers west movement defaults.
 	_ensure_axis_action(STICK_LEFT_EAST, KEY_D, JOY_AXIS_LEFT_X, 1.0) # Registers east movement defaults.
 	_ensure_button_action(BUTTON_A, KEY_SPACE, JOY_BUTTON_A) # Registers the primary action defaults.
+	_ensure_button_action(BUTTON_X, KEY_E, JOY_BUTTON_X) # Registers the interaction-pose defaults.
 	_ensure_button_action(BUTTON_START, KEY_ESCAPE, JOY_BUTTON_START) # Registers the start action defaults.
 
 static func _ensure_axis_action(action: StringName, physical_key: Key, axis: JoyAxis, axis_value: float) -> void: # Adds one movement action without overwriting user-defined mappings.
