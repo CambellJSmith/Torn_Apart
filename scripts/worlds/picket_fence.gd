@@ -2,7 +2,8 @@ extends Node3D # Builds a reusable primitive white picket fence around exposed c
 class_name TornPicketFence # Gives the fence component a strongly typed project-wide class name.
 
 const FENCE_INSET: float = 0.28 # Pulls the fence slightly inward from each visible platform edge.
-const FENCE_SAMPLE_SPACING: float = 0.62 # Controls the approximate spacing between neighboring pickets around a circular platform.
+const VISUAL_SAMPLE_SPACING: float = 0.62 # Controls dense visual picket spacing around circular platforms.
+const COLLISION_SAMPLE_SPACING: float = 1.9 # Uses much wider physics samples than the decorative fence geometry.
 const OVERLAP_CLEARANCE: float = 0.32 # Opens fence gaps wherever another platform substantially overlaps the current perimeter.
 const PICKET_WIDTH: float = 0.13 # Defines the horizontal thickness of each repeated primitive picket.
 const PICKET_HEIGHT: float = 1.05 # Defines the visible height of each primitive picket above its platform surface.
@@ -10,100 +11,123 @@ const RAIL_THICKNESS: float = 0.11 # Defines the vertical thickness shared by th
 const RAIL_DEPTH: float = 0.10 # Defines the depth of each horizontal fence rail.
 const LOWER_RAIL_HEIGHT: float = 0.35 # Positions the lower horizontal rail above the platform surface.
 const UPPER_RAIL_HEIGHT: float = 0.72 # Positions the upper horizontal rail above the platform surface.
-const COLLISION_HEIGHT: float = 1.05 # Gives each fence segment continuous collision across the complete visible fence height.
-const COLLISION_DEPTH: float = 0.16 # Keeps fence collision narrow while reliably stopping the player and enemies.
+const COLLISION_HEIGHT: float = 1.05 # Gives the simplified invisible perimeter enough height to stop player and enemy bodies.
 
 @onready var _pickets: MultiMeshInstance3D = $pickets # Caches the GPU-instanced picket renderer.
 @onready var _rails: MultiMeshInstance3D = $rails # Caches the GPU-instanced horizontal rail renderer.
-@onready var _collision: StaticBody3D = $collision # Caches the static body that owns continuous fence-segment collision.
+@onready var _collision_shape: CollisionShape3D = $collision/shape # Caches the single static collision node used by the complete fence perimeter.
 
-func build(platform_specs: Array[Vector4]) -> void: # Rebuilds fence visuals and collision from the owning level's circular platform definitions.
+func build(platform_specs: Array[TornPlatformSpec]) -> void: # Rebuilds decorative fence instances and one simplified collision shape from typed platform definitions.
 	var picket_transforms: Array[Transform3D] = [] # Collects every visible picket transform before allocating the shared MultiMesh buffer.
-	var rail_transforms: Array[Transform3D] = [] # Collects both horizontal rails for every exposed perimeter segment.
-	_clear_collision() # Removes any previously generated collision when the component is deliberately rebuilt.
-	for platform_index in range(platform_specs.size()): # Visits every circular platform so exposed edges can be fenced independently.
-		_collect_platform_fence(platform_index, platform_specs, picket_transforms, rail_transforms) # Appends visible fence transforms and matching segment collision for this platform.
-	_apply_multimesh(_pickets, _create_picket_mesh(), picket_transforms) # Draws every repeated picket through one GPU-instanced primitive mesh.
-	_apply_multimesh(_rails, _create_rail_mesh(), rail_transforms) # Draws every repeated horizontal rail through one GPU-instanced primitive mesh.
+	var rail_transforms: Array[Transform3D] = [] # Collects both horizontal rails for every exposed visual perimeter segment.
+	for platform_index: int in range(platform_specs.size()): # Visits every circular platform to collect its exposed decorative edge.
+		_collect_visual_fence(platform_index, platform_specs, picket_transforms, rail_transforms) # Adds visual transforms while leaving overlaps open for traversal.
+	var white_material: StandardMaterial3D = _create_white_material() # Creates one simple painted-white material shared by both repeated primitive meshes.
+	_apply_multimesh(_pickets, _create_picket_mesh(white_material), picket_transforms) # Uploads all repeated pickets through one instanced renderer.
+	_apply_multimesh(_rails, _create_rail_mesh(white_material), rail_transforms) # Uploads all repeated rails through one instanced renderer.
+	_build_collision(platform_specs) # Builds one coarse static concave shape independently from the denser decorative samples.
 
-func _collect_platform_fence(platform_index: int, platform_specs: Array[Vector4], picket_transforms: Array[Transform3D], rail_transforms: Array[Transform3D]) -> void: # Samples one circular perimeter while skipping openings created by overlapping platforms.
-	var platform_spec: Vector4 = platform_specs[platform_index] # Reads the center, radius, and top height packed into the level's typed platform definition.
-	var fence_radius: float = maxf(platform_spec.z - FENCE_INSET, 0.1) # Calculates the inward fence radius while preventing invalid tiny circles.
-	var sample_count: int = maxi(16, int(ceil(TAU * fence_radius / FENCE_SAMPLE_SPACING))) # Derives enough evenly spaced samples to keep the circular fence readable.
-	for sample_index in range(sample_count): # Walks each perimeter sample exactly once around the complete circle.
-		var current_angle: float = TAU * float(sample_index) / float(sample_count) # Converts the current sample index into a circular angle.
-		var next_angle: float = TAU * float((sample_index + 1) % sample_count) / float(sample_count) # Resolves the following sample while wrapping cleanly to the start of the circle.
-		var current_point: Vector3 = _get_perimeter_point(platform_spec, current_angle) # Calculates the current fence point on the authored platform surface.
-		var next_point: Vector3 = _get_perimeter_point(platform_spec, next_angle) # Calculates the next neighboring fence point on the same circular surface.
-		var current_exposed: bool = _is_point_exposed(current_point, platform_index, platform_specs) # Detects whether another platform covers this section and should create a traversal opening.
-		var next_exposed: bool = _is_point_exposed(next_point, platform_index, platform_specs) # Detects whether the following sample remains on an exposed outer edge.
-		if current_exposed: # Adds a visible picket only when this perimeter sample belongs to the outside of the combined level shape.
-			picket_transforms.append(Transform3D(Basis.IDENTITY, current_point + Vector3.UP * PICKET_HEIGHT * 0.5)) # Places one upright primitive picket with its base resting on the platform surface.
-		if current_exposed and next_exposed: # Builds rails and collision only between two neighboring exposed samples so platform overlaps remain open.
-			_append_fence_segment(current_point, next_point, rail_transforms) # Adds both visible rails and one continuous blocking collision segment between these samples.
+func _collect_visual_fence(platform_index: int, platform_specs: Array[TornPlatformSpec], picket_transforms: Array[Transform3D], rail_transforms: Array[Transform3D]) -> void: # Samples one platform perimeter for visible pickets and rails.
+	var platform_spec: TornPlatformSpec = platform_specs[platform_index] # Reads the typed platform definition for this visual perimeter.
+	var fence_radius: float = maxf(platform_spec.radius - FENCE_INSET, 0.1) # Calculates the inward fence radius while preventing invalid tiny circles.
+	var sample_count: int = maxi(16, int(ceil(TAU * fence_radius / VISUAL_SAMPLE_SPACING))) # Derives enough decorative samples for a readable circular fence.
+	for sample_index: int in range(sample_count): # Walks each visual perimeter sample exactly once.
+		var current_angle: float = TAU * float(sample_index) / float(sample_count) # Converts the current visual sample index into a circular angle.
+		var next_angle: float = TAU * float((sample_index + 1) % sample_count) / float(sample_count) # Resolves the following sample with circular wraparound.
+		var current_point: Vector3 = _get_perimeter_point(platform_spec, current_angle) # Calculates the current world-local fence point on the platform surface.
+		var next_point: Vector3 = _get_perimeter_point(platform_spec, next_angle) # Calculates the neighboring world-local fence point.
+		var current_exposed: bool = _is_point_exposed(current_point, platform_index, platform_specs) # Detects whether another platform covers the current perimeter section.
+		var next_exposed: bool = _is_point_exposed(next_point, platform_index, platform_specs) # Detects whether the neighboring sample remains on the outside edge.
+		if current_exposed: # Adds a visible picket only on the exposed outside perimeter.
+			picket_transforms.append(Transform3D(Basis.IDENTITY, current_point + Vector3.UP * PICKET_HEIGHT * 0.5)) # Places one upright primitive picket with its base on the platform surface.
+		if current_exposed and next_exposed: # Adds rails only between two exposed samples so platform overlaps remain open.
+			_append_visual_rails(current_point, next_point, rail_transforms) # Adds the two painted-white rails for this decorative segment.
 
-func _get_perimeter_point(platform_spec: Vector4, angle: float) -> Vector3: # Converts one packed platform definition and angle into a world-space fence position.
-	var fence_radius: float = maxf(platform_spec.z - FENCE_INSET, 0.1) # Reuses the inward radius used by the circular fence sampling logic.
-	return Vector3(platform_spec.x + cos(angle) * fence_radius, platform_spec.w, platform_spec.y + sin(angle) * fence_radius) # Places the sample around the platform center at the platform's walkable top height.
+func _append_visual_rails(start_point: Vector3, end_point: Vector3, rail_transforms: Array[Transform3D]) -> void: # Adds two visible primitive rail instances between neighboring pickets.
+	var segment_direction: Vector3 = end_point - start_point # Measures the tangent direction between neighboring circular samples.
+	segment_direction.y = 0.0 # Keeps visual rails level across each platform perimeter.
+	var segment_length: float = segment_direction.length() # Measures the exact local X scale needed by the shared rail primitive.
+	if segment_length <= 0.001: # Rejects degenerate neighboring points before orientation work.
+		return # Skips invalid zero-length visual geometry.
+	var midpoint: Vector3 = (start_point + end_point) * 0.5 # Centers both rail instances between the neighboring pickets.
+	var yaw: float = atan2(-segment_direction.z, segment_direction.x) # Rotates local X so the shared box follows the circular tangent.
+	var rail_basis: Basis = Basis(Vector3.UP, yaw).scaled_local(Vector3(segment_length, 1.0, 1.0)) # Applies tangent orientation and exact segment length to the unit rail mesh.
+	rail_transforms.append(Transform3D(rail_basis, midpoint + Vector3.UP * LOWER_RAIL_HEIGHT)) # Places the lower decorative rail.
+	rail_transforms.append(Transform3D(rail_basis, midpoint + Vector3.UP * UPPER_RAIL_HEIGHT)) # Places the upper decorative rail.
 
-func _is_point_exposed(point: Vector3, platform_index: int, platform_specs: Array[Vector4]) -> bool: # Reports whether a perimeter point lies outside every other overlapping platform footprint.
-	for other_index in range(platform_specs.size()): # Checks the sample against every other cylinder participating in the level union.
-		if other_index == platform_index: # Rejects the platform that owns the sampled perimeter point.
+func _build_collision(platform_specs: Array[TornPlatformSpec]) -> void: # Builds one coarse two-sided static trimesh for the complete exposed fence perimeter.
+	var faces: PackedVector3Array = PackedVector3Array() # Collects triangle vertices for one ConcavePolygonShape3D instead of many child collision shapes.
+	for platform_index: int in range(platform_specs.size()): # Visits every platform independently for simplified collision sampling.
+		var platform_spec: TornPlatformSpec = platform_specs[platform_index] # Reads the typed platform definition used by this collision perimeter.
+		var fence_radius: float = maxf(platform_spec.radius - FENCE_INSET, 0.1) # Uses the same inward edge as the decorative fence.
+		var sample_count: int = maxi(10, int(ceil(TAU * fence_radius / COLLISION_SAMPLE_SPACING))) # Uses substantially fewer collision samples than visible pickets.
+		for sample_index: int in range(sample_count): # Walks the coarse perimeter samples exactly once.
+			var current_angle: float = TAU * float(sample_index) / float(sample_count) # Converts the current collision sample into a circular angle.
+			var next_angle: float = TAU * float((sample_index + 1) % sample_count) / float(sample_count) # Resolves the next coarse sample with wraparound.
+			var current_point: Vector3 = _get_perimeter_point(platform_spec, current_angle) # Calculates the current coarse collision point.
+			var next_point: Vector3 = _get_perimeter_point(platform_spec, next_angle) # Calculates the neighboring coarse collision point.
+			if not _is_point_exposed(current_point, platform_index, platform_specs): # Leaves collision open when another platform covers the current perimeter sample.
+				continue # Skips this coarse segment start when it belongs to a traversal overlap.
+			if not _is_point_exposed(next_point, platform_index, platform_specs): # Leaves collision open when the neighboring sample enters a traversal overlap.
+				continue # Skips the complete segment so the overlap gap remains reliably passable.
+			_append_collision_quad(current_point, next_point, faces) # Adds two triangles for one simplified vertical barrier panel.
+	if faces.is_empty(): # Handles levels that intentionally have no exposed fence perimeter.
+		_collision_shape.shape = null # Removes stale collision instead of keeping a previous build alive.
+		return # Finishes collision rebuilding for the empty-perimeter case.
+	var shape: ConcavePolygonShape3D = ConcavePolygonShape3D.new() # Creates one static trimesh collision resource for the complete fence.
+	shape.backface_collision = true # Makes the thin barrier collide reliably from either side of its triangle faces.
+	shape.set_faces(faces) # Uploads the simplified triangle list as one collision shape.
+	_collision_shape.shape = shape # Applies the complete coarse fence collision to the single StaticBody child shape.
+
+func _append_collision_quad(start_point: Vector3, end_point: Vector3, faces: PackedVector3Array) -> void: # Appends two triangles forming one vertical coarse fence barrier panel.
+	var start_top: Vector3 = start_point + Vector3.UP * COLLISION_HEIGHT # Calculates the upper edge above the first coarse perimeter point.
+	var end_top: Vector3 = end_point + Vector3.UP * COLLISION_HEIGHT # Calculates the upper edge above the neighboring coarse perimeter point.
+	faces.append(start_point) # Adds the first lower vertex of the panel's first triangle.
+	faces.append(end_point) # Adds the second lower vertex of the panel's first triangle.
+	faces.append(end_top) # Adds the upper neighboring vertex completing the first triangle.
+	faces.append(start_point) # Reuses the first lower vertex for the second triangle.
+	faces.append(end_top) # Reuses the opposite upper vertex for the second triangle.
+	faces.append(start_top) # Adds the final upper vertex completing the rectangular barrier panel.
+
+func _get_perimeter_point(platform_spec: TornPlatformSpec, angle: float) -> Vector3: # Converts one typed platform definition and angle into a level-local fence position.
+	var fence_radius: float = maxf(platform_spec.radius - FENCE_INSET, 0.1) # Reuses the inward radius shared by visual and collision sampling.
+	return Vector3(platform_spec.center.x + cos(angle) * fence_radius, platform_spec.top_height, platform_spec.center.y + sin(angle) * fence_radius) # Places the sample around the platform center at its walkable height.
+
+func _is_point_exposed(point: Vector3, platform_index: int, platform_specs: Array[TornPlatformSpec]) -> bool: # Reports whether a perimeter point lies outside every other platform footprint.
+	for other_index: int in range(platform_specs.size()): # Checks this sample against every other cylinder participating in the level union.
+		if other_index == platform_index: # Rejects the platform that owns the sampled perimeter.
 			continue # Continues directly to the next possible overlapping platform.
-		var other_spec: Vector4 = platform_specs[other_index] # Reads the comparison platform center and radius.
-		var offset_x: float = point.x - other_spec.x # Measures horizontal distance from the sampled point to the comparison platform center.
-		var offset_z: float = point.z - other_spec.y # Measures depth distance from the sampled point to the comparison platform center.
-		var interior_radius: float = maxf(other_spec.z - OVERLAP_CLEARANCE, 0.0) # Shrinks the comparison footprint slightly so fence openings appear only at meaningful overlaps.
-		if offset_x * offset_x + offset_z * offset_z < interior_radius * interior_radius: # Detects a sample that sits safely inside another platform's playable footprint.
-			return false # Removes fence from this overlap so the player can travel between the two cylinders.
-	return true # Keeps fence on samples that form the exposed outer boundary of the combined level.
+		var other_spec: TornPlatformSpec = platform_specs[other_index] # Reads the comparison platform through named typed fields.
+		var offset_x: float = point.x - other_spec.center.x # Measures horizontal distance from the sample to the comparison platform center.
+		var offset_z: float = point.z - other_spec.center.y # Measures depth distance from the sample to the comparison platform center.
+		var interior_radius: float = maxf(other_spec.radius - OVERLAP_CLEARANCE, 0.0) # Shrinks the comparison footprint so gaps appear only at meaningful overlaps.
+		if offset_x * offset_x + offset_z * offset_z < interior_radius * interior_radius: # Detects a point safely inside another platform's playable footprint.
+			return false # Removes fence visual and collision from the traversal overlap.
+	return true # Keeps samples that form the exposed outside boundary of the combined platform layout.
 
-func _append_fence_segment(start_point: Vector3, end_point: Vector3, rail_transforms: Array[Transform3D]) -> void: # Adds two visible rails and one full-height collision box between neighboring perimeter points.
-	var segment_direction: Vector3 = end_point - start_point # Measures the tangent direction and length between neighboring circular samples.
-	segment_direction.y = 0.0 # Keeps fence segments level even when their owning platform height differs from neighboring cylinders.
-	var segment_length: float = segment_direction.length() # Measures the exact rail and collision length required for this sampled arc segment.
-	if segment_length <= 0.001: # Rejects degenerate neighboring points before normalizing orientation or creating collision.
-		return # Skips invalid geometry without adding zero-sized physics shapes.
-	var midpoint: Vector3 = (start_point + end_point) * 0.5 # Centers visuals and collision between the neighboring pickets.
-	var yaw: float = atan2(-segment_direction.z, segment_direction.x) # Rotates each local X-aligned box so it follows the circular tangent in the XZ plane.
-	var rail_basis: Basis = Basis(Vector3.UP, yaw).scaled_local(Vector3(segment_length, 1.0, 1.0)) # Applies segment length as local X scale after orienting the shared rail primitive.
-	rail_transforms.append(Transform3D(rail_basis, midpoint + Vector3.UP * LOWER_RAIL_HEIGHT)) # Places the lower white rail between the neighboring pickets.
-	rail_transforms.append(Transform3D(rail_basis, midpoint + Vector3.UP * UPPER_RAIL_HEIGHT)) # Places the upper white rail between the neighboring pickets.
-	var box_shape: BoxShape3D = BoxShape3D.new() # Creates one inexpensive primitive collision box for this fence segment.
-	box_shape.size = Vector3(segment_length, COLLISION_HEIGHT, COLLISION_DEPTH) # Matches collision length to the segment while blocking across the complete fence height.
-	var collision_shape: CollisionShape3D = CollisionShape3D.new() # Creates the scene node that places this primitive shape on the shared static body.
-	collision_shape.shape = box_shape # Assigns the configured primitive box to the fence collision node.
-	collision_shape.position = midpoint + Vector3.UP * COLLISION_HEIGHT * 0.5 # Places collision from the platform surface to the top of the pickets.
-	collision_shape.rotation = Vector3(0.0, yaw, 0.0) # Aligns the collision box with the same circular tangent as the visible rails.
-	_collision.add_child(collision_shape) # Adds the completed blocking segment to the reusable static fence body.
-
-func _create_picket_mesh() -> BoxMesh: # Creates the single primitive box mesh instanced for every vertical picket.
-	var mesh: BoxMesh = BoxMesh.new() # Allocates one shared box primitive for all repeated fence posts.
-	mesh.size = Vector3(PICKET_WIDTH, PICKET_HEIGHT, PICKET_WIDTH) # Gives each picket a narrow upright rectangular profile.
-	mesh.material = _create_white_material() # Applies the simple white fence surface to the shared picket primitive.
+func _create_picket_mesh(material: StandardMaterial3D) -> BoxMesh: # Creates the one primitive mesh shared by every vertical picket instance.
+	var mesh: BoxMesh = BoxMesh.new() # Allocates a single box primitive for all repeated pickets.
+	mesh.size = Vector3(PICKET_WIDTH, PICKET_HEIGHT, PICKET_WIDTH) # Gives the shared picket mesh its narrow upright profile.
+	mesh.material = material # Reuses the one painted-white material created for this fence build.
 	return mesh # Supplies the configured primitive to the MultiMesh renderer.
 
-func _create_rail_mesh() -> BoxMesh: # Creates the single unit-length primitive box mesh instanced and scaled for every fence rail segment.
-	var mesh: BoxMesh = BoxMesh.new() # Allocates one shared box primitive for all repeated horizontal rails.
-	mesh.size = Vector3(1.0, RAIL_THICKNESS, RAIL_DEPTH) # Keeps local X at unit length so each instance transform can scale it to its sampled segment length.
-	mesh.material = _create_white_material() # Applies the same simple white fence surface used by the pickets.
-	return mesh # Supplies the configured primitive to the MultiMesh renderer.
+func _create_rail_mesh(material: StandardMaterial3D) -> BoxMesh: # Creates the unit-length primitive mesh shared by every horizontal rail instance.
+	var mesh: BoxMesh = BoxMesh.new() # Allocates a single box primitive for all repeated rails.
+	mesh.size = Vector3(1.0, RAIL_THICKNESS, RAIL_DEPTH) # Keeps local X at unit length so instance transforms provide exact segment length.
+	mesh.material = material # Reuses the same painted-white material as the pickets.
+	return mesh # Supplies the configured unit rail to the MultiMesh renderer.
 
-func _create_white_material() -> StandardMaterial3D: # Creates the simple shared-looking surface used by primitive fence geometry.
-	var material: StandardMaterial3D = StandardMaterial3D.new() # Allocates a lightweight standard material without external texture dependencies.
+func _create_white_material() -> StandardMaterial3D: # Creates the simple painted surface shared by all primitive fence visuals.
+	var material: StandardMaterial3D = StandardMaterial3D.new() # Allocates one lightweight standard material for the complete fence build.
 	material.albedo_color = Color(0.96, 0.96, 0.92, 1.0) # Gives the fence a slightly warm painted-white appearance.
-	material.roughness = 0.88 # Keeps the painted primitive surfaces matte under the level lighting.
-	return material # Supplies the configured material to the generated picket or rail primitive.
+	material.roughness = 0.88 # Keeps the primitive fence surfaces broadly matte under level lighting.
+	return material # Supplies the shared material to both repeated mesh types.
 
-func _apply_multimesh(instance: MultiMeshInstance3D, mesh: Mesh, transforms: Array[Transform3D]) -> void: # Uploads one repeated primitive and all of its authored transforms as a single instanced renderer.
+func _apply_multimesh(instance: MultiMeshInstance3D, mesh: Mesh, transforms: Array[Transform3D]) -> void: # Uploads one repeated primitive and all transforms as a single instanced renderer.
 	var multimesh: MultiMesh = MultiMesh.new() # Creates the low-overhead GPU instancing resource for this fence element type.
-	multimesh.transform_format = MultiMesh.TRANSFORM_3D # Configures the buffer for complete 3D transforms before allocating instance storage.
-	multimesh.mesh = mesh # Assigns the single primitive mesh shared by every fence instance in this renderer.
-	multimesh.instance_count = transforms.size() # Allocates exactly the number of instances collected from exposed platform edges.
-	for transform_index in range(transforms.size()): # Writes each precomputed world-space fence transform into the shared instance buffer.
-		multimesh.set_instance_transform(transform_index, transforms[transform_index]) # Stores one picket or rail transform without creating another MeshInstance3D node.
-	instance.multimesh = multimesh # Applies the completed GPU-instanced fence resource to its renderer node.
-
-func _clear_collision() -> void: # Removes collision generated by an earlier deliberate rebuild of the same fence component.
-	for child in _collision.get_children(): # Visits every generated collision segment currently owned by the static fence body.
-		child.queue_free() # Schedules the old segment for removal before replacement geometry is used in later physics frames.
+	multimesh.transform_format = MultiMesh.TRANSFORM_3D # Configures storage for complete 3D transforms before allocating instances.
+	multimesh.mesh = mesh # Assigns the one primitive mesh shared by every instance.
+	multimesh.instance_count = transforms.size() # Allocates exactly the number of collected visual instances.
+	for transform_index: int in range(transforms.size()): # Writes each precomputed visual transform into the shared instance buffer.
+		multimesh.set_instance_transform(transform_index, transforms[transform_index]) # Stores one picket or rail without creating another MeshInstance3D node.
+	instance.multimesh = multimesh # Applies the completed instanced resource to its renderer node.
