@@ -1,0 +1,38 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="Material" path="res://assets/materials/world_01_dirt.tres" id="1_dirt"]
+[ext_resource type="Material" path="res://assets/materials/world_01_grass.tres" id="2_grass"]
+
+[sub_resource type="CylinderMesh" id="Mesh_dirt"]
+material = ExtResource("1_dirt")
+top_radius = 5.6
+bottom_radius = 5.6
+height = 1.36
+radial_segments = 32
+rings = 1
+
+[sub_resource type="CylinderMesh" id="Mesh_grass"]
+material = ExtResource("2_grass")
+top_radius = 5.6
+bottom_radius = 5.6
+height = 0.14
+radial_segments = 32
+rings = 1
+
+[sub_resource type="ConvexPolygonShape3D" id="Shape_platform"]
+points = PackedVector3Array(6.0617, -1.5, 0, 4.28627, -1.5, 4.28627, 3.71172e-16, -1.5, 6.0617, -4.28627, -1.5, 4.28627, -6.0617, -1.5, 7.42345e-16, -4.28627, -1.5, -4.28627, -1.11352e-15, -1.5, -6.0617, 4.28627, -1.5, -4.28627, 6.0617, 0, 0, 4.28627, 0, 4.28627, 3.71172e-16, 0, 6.0617, -4.28627, 0, 4.28627, -6.0617, 0, 7.42345e-16, -4.28627, 0, -4.28627, -1.11352e-15, 0, -6.0617, 4.28627, 0, -4.28627)
+
+[node name="platform_01" type="StaticBody3D"]
+collision_layer = 1
+collision_mask = 0
+
+[node name="dirt" type="MeshInstance3D" parent="."]
+position = Vector3(0, -0.82, 0)
+mesh = SubResource("Mesh_dirt")
+
+[node name="grass" type="MeshInstance3D" parent="."]
+position = Vector3(0, -0.07, 0)
+mesh = SubResource("Mesh_grass")
+
+[node name="collision" type="CollisionShape3D" parent="."]
+shape = SubResource("Shape_platform")

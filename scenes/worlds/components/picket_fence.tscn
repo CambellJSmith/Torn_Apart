@@ -12,3 +12,5 @@ script = ExtResource("1_fence")
 [node name="collision" type="StaticBody3D" parent="."]
 collision_layer = 1
 collision_mask = 0
+
+[node name="shape" type="CollisionShape3D" parent="collision"]

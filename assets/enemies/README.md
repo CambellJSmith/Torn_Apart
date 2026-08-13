@@ -1,9 +1,9 @@
 # slime_enemy_sprites
 
-Drop the final transparent slime PNGs into this folder using these exact names:
+The three slime sprites are imported directly by their reusable variant scenes:
 
-- `slime_green.png`
-- `slime_yellow.png`
-- `slime_red.png`
+- `slime_green.png` → `scenes/enemies/slime_green.tscn`
+- `slime_yellow.png` → `scenes/enemies/slime_yellow.tscn`
+- `slime_red.png` → `scenes/enemies/slime_red.tscn`
 
-The enemy scene loads these resources at runtime so the gameplay code remains valid before the image files are added. Godot will create the corresponding import metadata when the files are first opened by the editor.
+Enemy placement belongs to each level scene. Shared movement, ledge detection, stomp, and contact-damage behaviour remains in `scripts/enemies/slime_enemy.gd`.

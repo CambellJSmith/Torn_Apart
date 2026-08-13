@@ -1,0 +1,26 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/interaction_prompt.gd" id="1_prompt"]
+
+[node name="interaction_prompt" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("1_prompt")
+
+[node name="prompt_panel" type="PanelContainer" parent="."]
+layout_mode = 0
+offset_left = 430.0
+offset_top = 642.0
+offset_right = 850.0
+offset_bottom = 700.0
+
+[node name="prompt_label" type="Label" parent="prompt_panel"]
+layout_mode = 2
+text = "button_x  interact"
+horizontal_alignment = 1
+vertical_alignment = 1

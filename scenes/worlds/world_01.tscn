@@ -1,8 +1,16 @@
-[gd_scene load_steps=5 format=3]
+[gd_scene load_steps=17 format=3]
 
-[ext_resource type="Script" path="res://scripts/worlds/world_01.gd" id="1_world"]
+[ext_resource type="Script" path="res://scripts/worlds/world_01_context.gd" id="1_world"]
 [ext_resource type="PackedScene" path="res://scenes/worlds/components/picket_fence.tscn" id="2_fence"]
-[ext_resource type="Script" path="res://scripts/enemies/slime_spawner.gd" id="3_slimes"]
+[ext_resource type="PackedScene" path="res://scenes/enemies/slime_green.tscn" id="3_green"]
+[ext_resource type="PackedScene" path="res://scenes/enemies/slime_yellow.tscn" id="4_yellow"]
+[ext_resource type="PackedScene" path="res://scenes/enemies/slime_red.tscn" id="5_red"]
+[ext_resource type="Script" path="res://scripts/worlds/respawn_marker.gd" id="6_recovery"]
+[ext_resource type="Script" path="res://scripts/worlds/world_01_sign.gd" id="7_sign"]
+[ext_resource type="PackedScene" path="res://scenes/worlds/world_01/platform_01.tscn" id="8_platform_01"]
+[ext_resource type="PackedScene" path="res://scenes/worlds/world_01/platform_02.tscn" id="9_platform_02"]
+[ext_resource type="PackedScene" path="res://scenes/worlds/world_01/platform_03.tscn" id="10_platform_03"]
+[ext_resource type="PackedScene" path="res://scenes/worlds/world_01/platform_04.tscn" id="11_platform_04"]
 
 [sub_resource type="Environment" id="Environment_world_01"]
 background_mode = 1
@@ -11,6 +19,21 @@ ambient_light_source = 3
 ambient_light_color = Color(0.88, 0.92, 0.96, 1)
 ambient_light_energy = 0.78
 reflected_light_source = 2
+
+[sub_resource type="StandardMaterial3D" id="Material_sign"]
+albedo_color = Color(0.47, 0.29, 0.12, 1)
+roughness = 0.9
+
+[sub_resource type="BoxMesh" id="Mesh_sign_post"]
+material = SubResource("Material_sign")
+size = Vector3(0.16, 1.15, 0.16)
+
+[sub_resource type="BoxMesh" id="Mesh_sign_board"]
+material = SubResource("Material_sign")
+size = Vector3(1.35, 0.7, 0.12)
+
+[sub_resource type="SphereShape3D" id="Shape_sign_area"]
+radius = 1.35
 
 [node name="world_01" type="Node3D"]
 script = ExtResource("1_world")
@@ -25,7 +48,67 @@ shadow_enabled = true
 
 [node name="platforms" type="Node3D" parent="."]
 
+[node name="platform_01" parent="platforms" instance=ExtResource("8_platform_01")]
+position = Vector3(-3.5, 0, 3.5)
+
+[node name="platform_02" parent="platforms" instance=ExtResource("9_platform_02")]
+position = Vector3(2, 0, 0.5)
+
+[node name="platform_03" parent="platforms" instance=ExtResource("10_platform_03")]
+position = Vector3(-1, 0, -5)
+
+[node name="platform_04" parent="platforms" instance=ExtResource("11_platform_04")]
+position = Vector3(6.3, 0, -4)
+
+[node name="spawn_point" type="Marker3D" parent="."]
+position = Vector3(-4.5, 0.05, 4.8)
+
+[node name="camera_bounds_min" type="Marker3D" parent="."]
+position = Vector3(-3.5, 0, -3)
+
+[node name="camera_bounds_max" type="Marker3D" parent="."]
+position = Vector3(3, 0, 1.75)
+
+[node name="recovery_points" type="Node3D" parent="."]
+
+[node name="central_recovery" type="Marker3D" parent="recovery_points"]
+position = Vector3(0, 0.8, 1)
+script = ExtResource("6_recovery")
+
+[node name="rear_recovery" type="Marker3D" parent="recovery_points"]
+position = Vector3(-3, 1.55, -5)
+script = ExtResource("6_recovery")
+
 [node name="picket_fence" parent="." instance=ExtResource("2_fence")]
 
-[node name="slime_spawner" type="Node3D" parent="."]
-script = ExtResource("3_slimes")
+[node name="enemies" type="Node3D" parent="."]
+
+[node name="green_slime" parent="enemies" instance=ExtResource("3_green")]
+position = Vector3(1.6, 0.8, 0.3)
+
+[node name="yellow_slime" parent="enemies" instance=ExtResource("4_yellow")]
+position = Vector3(-1, 1.55, -5)
+
+[node name="red_slime" parent="enemies" instance=ExtResource("5_red")]
+position = Vector3(6.3, 0.8, -4)
+
+[node name="welcome_sign" type="Node3D" parent="."]
+position = Vector3(-5.4, 0, 2.2)
+
+[node name="post" type="MeshInstance3D" parent="welcome_sign"]
+position = Vector3(0, 0.575, 0)
+mesh = SubResource("Mesh_sign_post")
+
+[node name="board" type="MeshInstance3D" parent="welcome_sign"]
+position = Vector3(0, 1.05, 0)
+mesh = SubResource("Mesh_sign_board")
+
+[node name="interactable" type="Area3D" parent="welcome_sign"]
+position = Vector3(0, 0.8, 0)
+collision_layer = 8
+collision_mask = 0
+monitoring = false
+script = ExtResource("7_sign")
+
+[node name="shape" type="CollisionShape3D" parent="welcome_sign/interactable"]
+shape = SubResource("Shape_sign_area")
