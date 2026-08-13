@@ -1,0 +1,31 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/worlds/world_01.gd" id="1_world"]
+[ext_resource type="PackedScene" path="res://scenes/worlds/components/picket_fence.tscn" id="2_fence"]
+[ext_resource type="Script" path="res://scripts/enemies/slime_spawner.gd" id="3_slimes"]
+
+[sub_resource type="Environment" id="Environment_world_01"]
+background_mode = 1
+background_color = Color(0.74, 0.87, 0.96, 1)
+ambient_light_source = 3
+ambient_light_color = Color(0.88, 0.92, 0.96, 1)
+ambient_light_energy = 0.78
+reflected_light_source = 2
+
+[node name="world_01" type="Node3D"]
+script = ExtResource("1_world")
+
+[node name="world_environment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_world_01")
+
+[node name="sun" type="DirectionalLight3D" parent="."]
+rotation = Vector3(-0.872665, -0.436332, 0)
+light_energy = 1.15
+shadow_enabled = true
+
+[node name="platforms" type="Node3D" parent="."]
+
+[node name="picket_fence" parent="." instance=ExtResource("2_fence")]
+
+[node name="slime_spawner" type="Node3D" parent="."]
+script = ExtResource("3_slimes")
