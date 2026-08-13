@@ -1,1 +1,28 @@
-[gd_scene format=3]
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/enemies/slime_enemy.gd" id="1_slime"]
+[ext_resource type="Texture2D" path="res://assets/enemies/slime_green.png" id="2_texture"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_slime"]
+size = Vector3(1.05, 0.65, 0.8)
+
+[node name="green_slime" type="CharacterBody3D" groups=["enemy", "slime_enemy"]]
+collision_layer = 4
+collision_mask = 3
+floor_snap_length = 0.2
+script = ExtResource("1_slime")
+
+[node name="collision" type="CollisionShape3D" parent="."]
+position = Vector3(0, 0.325, 0)
+shape = SubResource("BoxShape3D_slime")
+
+[node name="ledge_probe" type="RayCast3D" parent="."]
+position = Vector3(0, 0.4, 0)
+target_position = Vector3(0, -1.25, 0)
+collision_mask = 1
+
+[node name="sprite" type="Sprite3D" parent="."]
+position = Vector3(0, 0.6, 0)
+billboard = 1
+pixel_size = 0.0015
+texture = ExtResource("2_texture")
